@@ -91,9 +91,9 @@ def make_salary_components(country):
 
 def read_data_file(file_path):
 	try:
-		with open(file_path, "r") as f:
+		with open(file_path) as f:
 			return f.read()
-	except IOError:
+	except OSError:
 		return "{}"
 
 
@@ -129,6 +129,6 @@ def validate_default_accounts(doc, method=None):
 		if get_account_currency(doc.default_payroll_payable_account) != doc.default_currency:
 			frappe.throw(
 				_(
-					"{0} currency must be same as company's default currency. Please select another account."
-				).format(frappe.bold("Default Payroll Payable Account"))
+					"The currency of {0} should be same as the company's default currency. Please select another account."
+				).format(frappe.bold(_("Default Payroll Payable Account")))
 			)

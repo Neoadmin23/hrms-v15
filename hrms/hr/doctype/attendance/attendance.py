@@ -95,13 +95,15 @@ class Attendance(Document):
 				& (Attendance.attendance_date == self.attendance_date)
 				& (Attendance.name != self.name)
 			)
+			.for_update()
 		)
 
 		if self.shift:
 			query = query.where(
 				((Attendance.shift.isnull()) | (Attendance.shift == ""))
 				| (
-					((Attendance.shift.isnotnull()) | (Attendance.shift != "")) & (Attendance.shift == self.shift)
+					((Attendance.shift.isnotnull()) | (Attendance.shift != ""))
+					& (Attendance.shift == self.shift)
 				)
 			)
 
@@ -140,8 +142,10 @@ class Attendance(Document):
 			)
 		).run(as_dict=True)
 
-		if same_date_attendance and has_overlapping_timings(self.shift, same_date_attendance[0].shift):
-			return same_date_attendance[0]
+		for d in same_date_attendance:
+			if has_overlapping_timings(self.shift, d.shift):
+				return d
+
 		return {}
 
 	def validate_employee_status(self):
@@ -174,12 +178,16 @@ class Attendance(Document):
 				if d.half_day_date == getdate(self.attendance_date):
 					self.status = "Half Day"
 					frappe.msgprint(
-						_("Employee {0} on Half day on {1}").format(self.employee, format_date(self.attendance_date))
+						_("Employee {0} on Half day on {1}").format(
+							self.employee, format_date(self.attendance_date)
+						)
 					)
 				else:
 					self.status = "On Leave"
 					frappe.msgprint(
-						_("Employee {0} is on Leave on {1}").format(self.employee, format_date(self.attendance_date))
+						_("Employee {0} is on Leave on {1}").format(
+							self.employee, format_date(self.attendance_date)
+						)
 					)
 
 		if self.status in ("On Leave", "Half Day"):
