@@ -143,7 +143,7 @@ class LeaveControlPanel(Document):
 			.on(Allocation.employee == Employee.name)
 			.select(Employee.name)
 			.distinct()
-			.where((Allocation.docstatus == 1) & (Allocation.employee.isin([d.name for d in all_employees])))
+			.where((Allocation.docstatus == 1) & (Allocation.employee.isin([d["name"] for d in all_employees])))
 		)
 
 		if self.dates_based_on == "Joining Date":
@@ -163,13 +163,13 @@ class LeaveControlPanel(Document):
 			leave_types = frappe.get_all(
 				"Leave Policy Detail", {"parent": self.leave_policy}, pluck="leave_type"
 			)
-			query = query.where(Allocation.leave_type.isin(leave_types))
-
+			if leave_types:  # Only include leave_type condition if leave_types is non-empty
+				query = query.where(Allocation.leave_type.isin(leave_types))
 		elif not self.allocate_based_on_leave_policy and self.leave_type:
 			query = query.where(Allocation.leave_type == self.leave_type)
 
 		employees_with_allocations = query.run(pluck=True)
-		return [d for d in all_employees if d.name not in employees_with_allocations]
+		return [d for d in all_employees if d["name"] not in employees_with_allocations]
 
 	@frappe.whitelist()
 	def get_latest_leave_period(self):
