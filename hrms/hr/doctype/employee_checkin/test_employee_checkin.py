@@ -518,7 +518,8 @@ class TestEmployeeCheckin(FrappeTestCase):
 
 		timestamp = datetime.combine(date, get_time("10:00:00"))
 		# allowed as distance (150m) is within checkin radius (500m)
-		make_checkin(employee, timestamp, 24.001, 72.001)
+		log = make_checkin(employee, timestamp, 24.001, 72.001)
+		self.assertEqual(log.custom_checkin_location, "Loc A")
 
 		timestamp = datetime.combine(date, get_time("10:30:00"))
 		log = frappe.get_doc(
@@ -533,10 +534,11 @@ class TestEmployeeCheckin(FrappeTestCase):
 		# not allowed as distance (1506m) is not within checkin radius
 		self.assertRaises(CheckinRadiusExceededError, log.insert)
 
-		# to ensure that the correct shift assignment is considered
+		# to ensure that the nearest location is considered
 		timestamp = datetime.combine(date, get_time("16:00:00"))
-		# allowed as distance (1506m) is within checkin radius (2000m)
-		make_checkin(employee, timestamp, 25.01, 75.01)
+		# allowed as distance (~1.4km) is within checkin radius (2000m)
+		log = make_checkin(employee, timestamp, 25.01, 75.01)
+		self.assertEqual(log.custom_checkin_location, "Loc B")
 
 		timestamp = datetime.combine(date, get_time("16:30:00"))
 		log = frappe.get_doc(

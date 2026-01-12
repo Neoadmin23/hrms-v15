@@ -29,7 +29,7 @@
   "column_break_vyyt",
   "shift_actual_start",
   "shift_actual_end"
- ],
+],
  "fields": [
   {
    "fieldname": "employee",
@@ -60,7 +60,7 @@
    "fieldtype": "Link",
    "label": "Shift",
    "options": "Shift Type",
-   "read_only": 1,
+
    "search_index": 1
   },
   {
