@@ -7,7 +7,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, get_datetime
 
-from hrms.hr.doctype.shift_assignment.shift_assignment import get_actual_start_end_datetime_of_shift
+from hrms.hr.doctype.shift_assignment.shift_assignment import get_actual_start_end_datetime_of_shift, get_shift_details
 from hrms.hr.utils import (
 	get_distance_between_coordinates,
 	set_geolocation_from_coordinates,
@@ -24,12 +24,27 @@ class EmployeeCheckin(Document):
 		self.time = get_datetime(self.time).replace(microsecond=0)
 
 	def validate(self):
+		frappe.logger().info(f"=== VALIDATE DEBUG ===")
+		frappe.logger().info(f"Starting validation for {self.name}")
+		frappe.logger().info(f"Shift before validation: {self.shift}")
+		frappe.logger().info(f"Custom checkin location before validation: {self.custom_checkin_location}")
+
 		validate_active_employee(self.employee)
 		self.validate_duplicate_log()
 		self.validate_time_change()
+
+		# Validate shift assignment exists before proceeding
+		self.validate_shift_assignment_exists()
+
+		frappe.logger().info(f"Before fetch_shift - shift: {self.shift}")
 		self.fetch_shift()
+		frappe.logger().info(f"After fetch_shift - shift: {self.shift}")
+
 		self.set_geolocation()
+		frappe.logger().info(f"After set_geolocation - custom_checkin_location: {self.custom_checkin_location}")
+
 		self.validate_distance_from_shift_location()
+		frappe.logger().info(f"After validate_distance - shift: {self.shift}, custom_checkin_location: {self.custom_checkin_location}")
 
 	def validate_duplicate_log(self):
 		doc = frappe.db.exists(
@@ -59,17 +74,98 @@ class EmployeeCheckin(Document):
 	@frappe.whitelist()
 	def set_geolocation(self):
 		set_geolocation_from_coordinates(self)
+		self.set_checkin_location()
+
+	@frappe.whitelist()
+	def set_checkin_location(self):
+		frappe.logger().info(f"=== SET CHECKIN LOCATION DEBUG ===")
+		frappe.logger().info(f"Geolocation tracking enabled: {frappe.db.get_single_value('HR Settings', 'allow_geolocation_tracking')}")
+		frappe.logger().info(f"Latitude: {self.latitude}, Longitude: {self.longitude}")
+
+		if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
+			frappe.logger().info("Geolocation tracking disabled, returning")
+			return
+
+		if not (self.latitude and self.longitude):
+			frappe.logger().info("Latitude or longitude missing, returning")
+			return
+
+		# Get all office locations
+		office_locations = frappe.get_all(
+			"Shift Location",
+			filters={
+				"latitude": ["is", "set"],
+				"longitude": ["is", "set"],
+				"checkin_radius": [">", 0],
+			},
+			fields=["name", "location_name", "latitude", "longitude", "checkin_radius"],
+		)
+
+		frappe.logger().info(f"Found {len(office_locations)} office locations: {[loc['location_name'] for loc in office_locations]}")
+
+		if not office_locations:
+			frappe.logger().info("No office locations found, returning")
+			return
+
+		# Find nearest office location
+		min_distance = float('inf')
+		nearest_location = None
+
+		for location in office_locations:
+			distance = get_distance_between_coordinates(
+				location.latitude, location.longitude, self.latitude, self.longitude
+			)
+			frappe.logger().info(f"Distance to {location.location_name}: {distance} meters")
+			if distance < min_distance:
+				min_distance = distance
+				nearest_location = location
+
+		frappe.logger().info(f"Nearest location: {nearest_location.location_name if nearest_location else 'None'} at {min_distance} meters")
+
+		if nearest_location:
+			frappe.logger().info(f"Setting custom_checkin_location to: {nearest_location.name}")
+			self.custom_checkin_location = nearest_location.name
+		else:
+			frappe.logger().info("No nearest location found")
 
 	@frappe.whitelist()
 	def fetch_shift(self):
+		frappe.logger().info(f"=== FETCH SHIFT DEBUG ===")
+		frappe.logger().info(f"Fetch shift called for {self.name}, current shift: {self.shift}")
+		frappe.logger().info(f"Employee: {self.employee}, Time: {self.time}")
+		frappe.logger().info(f"Attendance linked: {self.attendance}")
+
+		if self.attendance:
+			frappe.logger().info(f"Attendance already linked ({self.attendance}), skipping shift fetch")
+			return
+
+		if self.shift:
+			# If shift is already set (e.g., from import), fetch timings for it
+			frappe.logger().info(f"Shift already set to {self.shift}, fetching timings")
+			shift_details = get_shift_details(self.shift, get_datetime(self.time))
+			if shift_details:
+				self.shift_actual_start = shift_details.actual_start
+				self.shift_actual_end = shift_details.actual_end
+				self.shift_start = shift_details.start_datetime
+				self.shift_end = shift_details.end_datetime
+				frappe.logger().info(f"Set timings for existing shift {self.shift}")
+			else:
+				frappe.logger().info(f"Could not fetch details for shift {self.shift}")
+			return
+
+		frappe.logger().info(f"Fetching shift for employee {self.employee} at time {self.time}")
 		if not (
 			shift_actual_timings := get_actual_start_end_datetime_of_shift(
 				self.employee, get_datetime(self.time), True
 			)
 		):
+			frappe.logger().info(f"No shift found for employee {self.employee} at {self.time}, marking as offshift")
 			self.shift = None
 			self.offshift = 1
 			return
+
+		frappe.logger().info(f"Shift found: {shift_actual_timings.shift_type.name} for employee {self.employee} at {self.time}")
+		frappe.logger().info(f"Shift timings: actual_start={shift_actual_timings.actual_start}, actual_end={shift_actual_timings.actual_end}")
 
 		if (
 			shift_actual_timings.shift_type.determine_check_in_and_check_out
@@ -82,47 +178,86 @@ class EmployeeCheckin(Document):
 					shift_actual_timings.shift_type.name
 				)
 			)
-		if not self.attendance:
-			self.offshift = 0
-			self.shift = shift_actual_timings.shift_type.name
-			self.shift_actual_start = shift_actual_timings.actual_start
-			self.shift_actual_end = shift_actual_timings.actual_end
-			self.shift_start = shift_actual_timings.start_datetime
-			self.shift_end = shift_actual_timings.end_datetime
+
+		frappe.logger().info(f"Assigning shift {shift_actual_timings.shift_type.name} to checkin")
+		frappe.logger().info(f"Before assignment - shift: {self.shift}")
+		self.offshift = 0
+		self.shift = shift_actual_timings.shift_type.name
+		self.shift_actual_start = shift_actual_timings.actual_start
+		self.shift_actual_end = shift_actual_timings.actual_end
+		self.shift_start = shift_actual_timings.start_datetime
+		self.shift_end = shift_actual_timings.end_datetime
+		frappe.logger().info(f"After assignment - shift: {self.shift}")
+
+	def validate_shift_assignment_exists(self):
+		"""Validate that employee has an active shift assignment for the check-in date"""
+		checkin_date = get_datetime(self.time).date()
+
+		# Check if employee has any active shift assignment for this date
+		active_assignments = frappe.get_all(
+			"Shift Assignment",
+			filters={
+				"employee": self.employee,
+				"start_date": ["<=", checkin_date],
+				"docstatus": 1,
+				"status": "Active",
+			},
+			or_filters=[["end_date", ">=", checkin_date], ["end_date", "is", "not set"]],
+			fields=["name", "shift_type", "start_date", "end_date"]
+		)
+
+		if not active_assignments:
+			frappe.throw(
+				_("No active shift assignment found for {0} on {1}. Please ensure you have a shift assignment for this date before checking in.").format(
+					frappe.get_value("Employee", self.employee, "employee_name"), checkin_date.strftime("%d-%m-%Y")
+				)
+			)
 
 	def validate_distance_from_shift_location(self):
 		if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
 			return
 
-		if not (self.latitude or self.longitude):
-			frappe.throw(_("Latitude and longitude values are required for checking in."))
+		if self.latitude is None or self.longitude is None:
+			return  # Skip validation if location not available
 
-		assignment_locations = frappe.get_all(
-			"Shift Assignment",
+		# Get all office locations
+		office_locations = frappe.get_all(
+			"Shift Location",
 			filters={
-				"employee": self.employee,
-				"shift_type": self.shift,
-				"start_date": ["<=", self.time],
-				"shift_location": ["is", "set"],
-				"docstatus": 1,
-				"status": "Active",
+				"latitude": ["is", "set"],
+				"longitude": ["is", "set"],
+				"checkin_radius": [">", 0],
 			},
-			or_filters=[["end_date", ">=", self.time], ["end_date", "is", "not set"]],
-			pluck="shift_location",
+			fields=["name", "location_name", "latitude", "longitude", "checkin_radius"],
 		)
-		if not assignment_locations:
-			return
 
-		checkin_radius, latitude, longitude = frappe.db.get_value(
-			"Shift Location", assignment_locations[0], ["checkin_radius", "latitude", "longitude"]
-		)
-		if checkin_radius <= 0:
-			return
+		if not office_locations:
+			frappe.throw(_("No office locations configured for check-in validation."))
 
-		distance = get_distance_between_coordinates(latitude, longitude, self.latitude, self.longitude)
-		if distance > checkin_radius:
+		# Find nearest office location
+		min_distance = float('inf')
+		nearest_location = None
+
+		for location in office_locations:
+			distance = get_distance_between_coordinates(
+				location.latitude, location.longitude, self.latitude, self.longitude
+			)
+			if distance < min_distance:
+				min_distance = distance
+				nearest_location = location
+
+		if not nearest_location:
+			frappe.throw(_("Unable to determine nearest office location."))
+
+		# Set the check-in location field
+		self.custom_checkin_location = nearest_location.name
+
+		# Validate distance
+		if min_distance > nearest_location.checkin_radius:
 			frappe.throw(
-				_("You must be within {0} meters of your shift location to check in.").format(checkin_radius),
+				_("You must be within {0} meters of an office location to check in. Nearest location: {1} ({2} meters away).").format(
+					nearest_location.checkin_radius, nearest_location.location_name, round(min_distance)
+				),
 				exc=CheckinRadiusExceededError,
 			)
 

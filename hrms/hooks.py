@@ -150,7 +150,7 @@ override_doctype_class = {
 	"Employee": "hrms.overrides.employee_master.EmployeeMaster",
 	"Timesheet": "hrms.overrides.employee_timesheet.EmployeeTimesheet",
 	"Payment Entry": "hrms.overrides.employee_payment_entry.EmployeePaymentEntry",
-	"Project": "hrms.overrides.employee_project.EmployeeProject",
+	"Project": "hrms.overrides.employee_project.EmployeeProject"
 }
 
 # Document Events
@@ -222,12 +222,17 @@ scheduler_events = {
 	"all": [
 		"hrms.hr.doctype.interview.interview.send_interview_reminder",
 	],
+	"cron": {
+		"*/5 * * * *": [
+			"hrms.hr.doctype.shift_type.shift_type.process_auto_attendance_for_all_shifts",
+		],
+	},
 	"hourly": [
 		"hrms.hr.doctype.daily_work_summary_group.daily_work_summary_group.trigger_emails",
 	],
 	"hourly_long": [
 		"hrms.hr.doctype.shift_type.shift_type.update_last_sync_of_checkin",
-		"hrms.hr.doctype.shift_type.shift_type.process_auto_attendance_for_all_shifts",
+		#"hrms.hr.doctype.shift_type.shift_type.process_auto_attendance_for_all_shifts",
 		"hrms.hr.doctype.shift_schedule_assignment.shift_schedule_assignment.process_auto_shift_creation",
 	],
 	"daily": [
