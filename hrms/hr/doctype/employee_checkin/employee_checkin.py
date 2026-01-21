@@ -24,11 +24,6 @@ class EmployeeCheckin(Document):
 		self.time = get_datetime(self.time).replace(microsecond=0)
 
 	def validate(self):
-		frappe.logger().info(f"=== VALIDATE DEBUG ===")
-		frappe.logger().info(f"Starting validation for {self.name}")
-		frappe.logger().info(f"Shift before validation: {self.shift}")
-		frappe.logger().info(f"Custom checkin location before validation: {self.custom_checkin_location}")
-
 		validate_active_employee(self.employee)
 		self.validate_duplicate_log()
 		self.validate_time_change()
@@ -36,15 +31,11 @@ class EmployeeCheckin(Document):
 		# Validate shift assignment exists before proceeding
 		self.validate_shift_assignment_exists()
 
-		frappe.logger().info(f"Before fetch_shift - shift: {self.shift}")
 		self.fetch_shift()
-		frappe.logger().info(f"After fetch_shift - shift: {self.shift}")
 
 		self.set_geolocation()
-		frappe.logger().info(f"After set_geolocation - custom_checkin_location: {self.custom_checkin_location}")
 
 		self.validate_distance_from_shift_location()
-		frappe.logger().info(f"After validate_distance - shift: {self.shift}, custom_checkin_location: {self.custom_checkin_location}")
 
 	def validate_duplicate_log(self):
 		doc = frappe.db.exists(
@@ -78,16 +69,13 @@ class EmployeeCheckin(Document):
 
 	@frappe.whitelist()
 	def set_checkin_location(self):
-		frappe.logger().info(f"=== SET CHECKIN LOCATION DEBUG ===")
-		frappe.logger().info(f"Geolocation tracking enabled: {frappe.db.get_single_value('HR Settings', 'allow_geolocation_tracking')}")
-		frappe.logger().info(f"Latitude: {self.latitude}, Longitude: {self.longitude}")
+		if self.custom_checkin_location:
+			return
 
 		if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
-			frappe.logger().info("Geolocation tracking disabled, returning")
 			return
 
 		if not (self.latitude and self.longitude):
-			frappe.logger().info("Latitude or longitude missing, returning")
 			return
 
 		# Get all office locations
@@ -101,10 +89,7 @@ class EmployeeCheckin(Document):
 			fields=["name", "location_name", "latitude", "longitude", "checkin_radius"],
 		)
 
-		frappe.logger().info(f"Found {len(office_locations)} office locations: {[loc['location_name'] for loc in office_locations]}")
-
 		if not office_locations:
-			frappe.logger().info("No office locations found, returning")
 			return
 
 		# Find nearest office location
@@ -115,57 +100,36 @@ class EmployeeCheckin(Document):
 			distance = get_distance_between_coordinates(
 				location.latitude, location.longitude, self.latitude, self.longitude
 			)
-			frappe.logger().info(f"Distance to {location.location_name}: {distance} meters")
 			if distance < min_distance:
 				min_distance = distance
 				nearest_location = location
 
-		frappe.logger().info(f"Nearest location: {nearest_location.location_name if nearest_location else 'None'} at {min_distance} meters")
-
 		if nearest_location:
-			frappe.logger().info(f"Setting custom_checkin_location to: {nearest_location.name}")
 			self.custom_checkin_location = nearest_location.name
-		else:
-			frappe.logger().info("No nearest location found")
 
 	@frappe.whitelist()
 	def fetch_shift(self):
-		frappe.logger().info(f"=== FETCH SHIFT DEBUG ===")
-		frappe.logger().info(f"Fetch shift called for {self.name}, current shift: {self.shift}")
-		frappe.logger().info(f"Employee: {self.employee}, Time: {self.time}")
-		frappe.logger().info(f"Attendance linked: {self.attendance}")
-
 		if self.attendance:
-			frappe.logger().info(f"Attendance already linked ({self.attendance}), skipping shift fetch")
 			return
 
 		if self.shift:
 			# If shift is already set (e.g., from import), fetch timings for it
-			frappe.logger().info(f"Shift already set to {self.shift}, fetching timings")
 			shift_details = get_shift_details(self.shift, get_datetime(self.time))
 			if shift_details:
 				self.shift_actual_start = shift_details.actual_start
 				self.shift_actual_end = shift_details.actual_end
 				self.shift_start = shift_details.start_datetime
 				self.shift_end = shift_details.end_datetime
-				frappe.logger().info(f"Set timings for existing shift {self.shift}")
-			else:
-				frappe.logger().info(f"Could not fetch details for shift {self.shift}")
 			return
 
-		frappe.logger().info(f"Fetching shift for employee {self.employee} at time {self.time}")
 		if not (
 			shift_actual_timings := get_actual_start_end_datetime_of_shift(
 				self.employee, get_datetime(self.time), True
 			)
 		):
-			frappe.logger().info(f"No shift found for employee {self.employee} at {self.time}, marking as offshift")
 			self.shift = None
 			self.offshift = 1
 			return
-
-		frappe.logger().info(f"Shift found: {shift_actual_timings.shift_type.name} for employee {self.employee} at {self.time}")
-		frappe.logger().info(f"Shift timings: actual_start={shift_actual_timings.actual_start}, actual_end={shift_actual_timings.actual_end}")
 
 		if (
 			shift_actual_timings.shift_type.determine_check_in_and_check_out
@@ -179,15 +143,12 @@ class EmployeeCheckin(Document):
 				)
 			)
 
-		frappe.logger().info(f"Assigning shift {shift_actual_timings.shift_type.name} to checkin")
-		frappe.logger().info(f"Before assignment - shift: {self.shift}")
 		self.offshift = 0
 		self.shift = shift_actual_timings.shift_type.name
 		self.shift_actual_start = shift_actual_timings.actual_start
 		self.shift_actual_end = shift_actual_timings.actual_end
 		self.shift_start = shift_actual_timings.start_datetime
 		self.shift_end = shift_actual_timings.end_datetime
-		frappe.logger().info(f"After assignment - shift: {self.shift}")
 
 	def validate_shift_assignment_exists(self):
 		"""Validate that employee has an active shift assignment for the check-in date"""
@@ -234,29 +195,40 @@ class EmployeeCheckin(Document):
 		if not office_locations:
 			frappe.throw(_("No office locations configured for check-in validation."))
 
-		# Find nearest office location
-		min_distance = float('inf')
-		nearest_location = None
+		# If custom_checkin_location is set, validate against that location
+		if self.custom_checkin_location:
+			selected_location = next((loc for loc in office_locations if loc.name == self.custom_checkin_location), None)
+			if not selected_location:
+				frappe.throw(_("Selected check-in location is not configured for validation."))
+			location_to_validate = selected_location
+		else:
+			# Find nearest office location
+			min_distance = float('inf')
+			nearest_location = None
 
-		for location in office_locations:
-			distance = get_distance_between_coordinates(
-				location.latitude, location.longitude, self.latitude, self.longitude
-			)
-			if distance < min_distance:
-				min_distance = distance
-				nearest_location = location
+			for location in office_locations:
+				distance = get_distance_between_coordinates(
+					location.latitude, location.longitude, self.latitude, self.longitude
+				)
+				if distance < min_distance:
+					min_distance = distance
+					nearest_location = location
 
-		if not nearest_location:
-			frappe.throw(_("Unable to determine nearest office location."))
+			if not nearest_location:
+				frappe.throw(_("Unable to determine nearest office location."))
 
-		# Set the check-in location field
-		self.custom_checkin_location = nearest_location.name
+			# Set the check-in location field if not set
+			self.custom_checkin_location = nearest_location.name
+			location_to_validate = nearest_location
 
-		# Validate distance
-		if min_distance > nearest_location.checkin_radius:
+		# Validate distance against the determined location
+		distance = get_distance_between_coordinates(
+			location_to_validate.latitude, location_to_validate.longitude, self.latitude, self.longitude
+		)
+		if distance > location_to_validate.checkin_radius:
 			frappe.throw(
-				_("You must be within {0} meters of an office location to check in. Nearest location: {1} ({2} meters away).").format(
-					nearest_location.checkin_radius, nearest_location.location_name, round(min_distance)
+				_("You must be within {0} meters of the check-in location to check in. Location: {1} ({2} meters away).").format(
+					location_to_validate.checkin_radius, location_to_validate.location_name, round(distance)
 				),
 				exc=CheckinRadiusExceededError,
 			)

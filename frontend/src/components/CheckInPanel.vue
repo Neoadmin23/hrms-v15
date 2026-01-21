@@ -209,18 +209,15 @@ const shiftTypeResource = createResource({
                 console.log("End date filter:", endDate);
                 return [">=", endDate];
             },
-            shift_location: () => {
-                console.log("Shift location filter:", selectedLocation.value);
-                return selectedLocation.value;
-            },
             docstatus: 1,
         },
         fields: ["shift_type", "name", "start_date", "end_date", "shift_location"],
-        limit: 1,
+        limit: 10,
     },
     onSuccess(data) {
         console.log("Fetching Shift Type for employee:", employee.data.name);
         console.log("Shift Assignment full data:", data);
+        console.log("Current selectedLocation:", selectedLocation.value);
 
         const matchedAssignment = data.find(
             assignment => assignment.shift_location === selectedLocation.value
@@ -231,7 +228,7 @@ const shiftTypeResource = createResource({
             console.log("Matched shift type:", shiftType.value);
         } else {
             shiftType.value = "Day"; // fallback
-            console.warn("No matching shift assignment found for location:", selectedLocation.value);
+            console.warn("No matching shift assignment found for location:", selectedLocation.value, "Available assignments:", data.map(a => ({ location: a.shift_location, type: a.shift_type })));
         }
     },
     onError(error) {
@@ -256,11 +253,11 @@ watch(() => employee.data?.name, (newEmployeeName) => {
     }
 })
 
-// Watch for employee data changes to refetch checkins
-watch(() => employee.data?.name, (newEmployeeName) => {
-    if (newEmployeeName) {
-        console.log("Employee changed, refetching checkins for:", newEmployeeName);
-        checkins.fetch();
+// Watch for selectedLocation changes to refetch shift type
+watch(selectedLocation, (newLocation) => {
+    if (newLocation) {
+        console.log("Location changed, refetching shift type for:", newLocation);
+        shiftTypeResource.fetch();
     }
 })
 
