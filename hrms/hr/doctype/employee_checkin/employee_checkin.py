@@ -37,6 +37,10 @@ class EmployeeCheckin(Document):
 
 		self.validate_distance_from_shift_location()
 
+		# Set device_id if not already set
+		if not self.device_id:
+			self.device_id = "backend"
+
 	def validate_duplicate_log(self):
 		doc = frappe.db.exists(
 			"Employee Checkin",

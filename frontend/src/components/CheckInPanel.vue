@@ -50,44 +50,27 @@
                 </div>
             </div>
 
-            <!-- Shift Location Dropdown or Message -->
-            <div class="w-full" v-if="allowedLocations.length">
-                <label for="custom_checkin_location" class="font-medium text-gray-700 text-sm">
-                    {{ __("Select Shift Location") }}
-                </label>
-                <select
-                    id="custom_checkin_location"
-                    v-model="selectedLocation"
-                    class="w-full mt-1 p-2 border rounded"
-                    required
-                >
-                    <option value="" disabled>{{ __("Choose a location") }}</option>
-                    <option
-                        v-for="location in allowedLocations"
-                        :key="location"
-                        :value="location"
-                    >
-                        {{ location }}
-                    </option>
-                </select>
+            <!-- Shift Details Display -->
+            <div v-if="currentShiftAssignment" class="w-full space-y-3">
+                <div>
+                    <label class="font-medium text-gray-700 text-sm">
+                        {{ __("Shift Type") }}
+                    </label>
+                    <div class="w-full mt-1 p-2 border rounded bg-gray-50 text-gray-700">
+                        {{ currentShiftAssignment.shift_type }}
+                    </div>
+                </div>
+                <div>
+                    <label class="font-medium text-gray-700 text-sm">
+                        {{ __("Shift Location") }}
+                    </label>
+                    <div class="w-full mt-1 p-2 border rounded bg-gray-50 text-gray-700">
+                        {{ currentShiftAssignment.shift_location }}
+                    </div>
+                </div>
             </div>
-
-            <!-- No Shift Location Fallback -->
-            <div class="w-full text-center text-sm text-red-500 font-medium" v-else>
-                {{ __("No shift locations assigned. Please contact HR.") }}
-            </div>
-
-            <!-- Shift Type Display (Read-Only) -->
-            <div class="w-full" v-if="shiftType">
-                <label for="shift_type" class="font-medium text-gray-700 text-sm">
-                    {{ __("Shift Type") }}
-                </label>
-                <input
-                    id="shift_type"
-                    :value="shiftType"
-                    class="w-full mt-1 p-2 border rounded bg-gray-100"
-                    readonly
-                />
+            <div v-else class="w-full text-center text-sm text-red-500 font-medium">
+                {{ __("No active shift assignment found for today") }}
             </div>
 
             <!-- Map View (Geolocation) -->
@@ -114,7 +97,7 @@
             <Button
                 variant="solid"
                 class="w-full py-5 text-sm"
-                :disabled="!selectedLocation || !allowedLocations.length"
+                :disabled="!currentShiftAssignment"
                 @click.once="submitLog(nextAction.action)"
             >
                 {{ __("Confirm {0}", [nextAction.label]) }}
@@ -129,6 +112,8 @@ import { computed, inject, ref, onMounted, onBeforeUnmount, watch } from "vue"
 import { IonModal, modalController } from "@ionic/vue"
 import { formatTimestamp } from "@/utils/formatters"
 
+console.log("CheckInPanel.vue loaded from HRMS app")
+
 const DOCTYPE = "Employee Checkin"
 
 const socket = inject("$socket")
@@ -139,9 +124,7 @@ const checkinTimestamp = ref(null)
 const latitude = ref(null)
 const longitude = ref(null)
 const locationStatus = ref("")
-const selectedLocation = ref("")
-const allowedLocations = ref([])
-const shiftType = ref("")
+const currentShiftAssignment = ref(null)
 
 const settings = createResource({
     url: "hrms.api.get_hr_settings",
@@ -157,87 +140,22 @@ const checkins = createListResource({
     orderBy: "time desc",
     auto: false, // Disable auto fetch to ensure it fetches with correct employee data
 })
-const allowedLocationsResource = createResource({
-    url: "frappe.client.get",
+// Fetch current shift assignment for the employee
+const currentShiftAssignmentResource = createResource({
+    url: "hrms.api.get_current_shift_assignment",
     params: {
-        doctype: "Employee",
-        name: employee.data.name,
-        fields: ["custom_allowed_shift_locations"],
+        employee: employee.data.name,
     },
     onSuccess(data) {
-        console.log("Fetching allowed shift locations for employee:", employee.data.name);
-        console.log("Allowed shift locations data:", data);
-        allowedLocations.value = (data.custom_allowed_shift_locations || []).map(row => row.shift_location).filter(Boolean)
-        console.log("Processed allowedLocations:", allowedLocations.value);
-        if (allowedLocations.value.length > 0 && !selectedLocation.value) {
-            selectedLocation.value = allowedLocations.value[0]
-            console.log("Set default selectedLocation:", selectedLocation.value);
-        }
-        if (selectedLocation.value && !allowedLocations.value.includes(selectedLocation.value)) {
-            selectedLocation.value = allowedLocations.value[0] || ""
-            console.log("Reset selectedLocation to:", selectedLocation.value);
-        }
+        console.log("Fetching current shift assignment for employee:", employee.data.name);
+        console.log("Current shift assignment data:", data);
+        currentShiftAssignment.value = data
     },
     onError(error) {
-        console.error("Error fetching allowed shift locations:", error);
+        console.error("Error fetching current shift assignment:", error);
         toast({
             title: __("Error"),
-            text: __("Failed to fetch allowed shift locations"),
-            icon: "alert-circle",
-            position: "bottom-center",
-            iconClasses: "text-red-500",
-        })
-    },
-})
-
-const shiftTypeResource = createResource({
-    url: "frappe.client.get_list",
-    params: {
-        doctype: "Shift Assignment",
-        filters: {
-            employee: () => {
-                console.log("Employee name for Shift Assignment query:", employee.data.name);
-                return employee.data.name;
-            },
-            start_date: () => {
-                const startDate = dayjs().format("YYYY-MM-DD");
-                console.log("Start date filter:", startDate);
-                return ["<=", startDate];
-            },
-            end_date: () => {
-                const endDate = dayjs().format("YYYY-MM-DD");
-                console.log("End date filter:", endDate);
-                return [">=", endDate];
-            },
-            docstatus: 1,
-        },
-        fields: ["shift_type", "name", "start_date", "end_date", "shift_location"],
-        limit: 10,
-    },
-    onSuccess(data) {
-        console.log("Fetching Shift Type for employee:", employee.data.name);
-        console.log("Shift Assignment full data:", data);
-        console.log("Current selectedLocation:", selectedLocation.value);
-
-        const matchedAssignment = data.find(
-            assignment => assignment.shift_location === selectedLocation.value
-        );
-
-        if (matchedAssignment) {
-            shiftType.value = matchedAssignment.shift_type;
-            console.log("Matched shift type:", shiftType.value);
-        } else {
-            shiftType.value = "Day"; // fallback
-            console.warn("No matching shift assignment found for location:", selectedLocation.value, "Available assignments:", data.map(a => ({ location: a.shift_location, type: a.shift_type })));
-        }
-    },
-    onError(error) {
-        console.error("Error fetching Shift Type:", error);
-        shiftType.value = "Day"; // Default to "Day" on error
-        console.log("Set default shiftType on error:", shiftType.value);
-        toast({
-            title: __("Error"),
-            text: __("Failed to fetch Shift Type, using default 'Day'"),
+            text: __("Failed to fetch current shift assignment"),
             icon: "alert-circle",
             position: "bottom-center",
             iconClasses: "text-red-500",
@@ -253,20 +171,11 @@ watch(() => employee.data?.name, (newEmployeeName) => {
     }
 })
 
-// Watch for selectedLocation changes to refetch shift type
-watch(selectedLocation, (newLocation) => {
-    if (newLocation) {
-        console.log("Location changed, refetching shift type for:", newLocation);
-        shiftTypeResource.fetch();
-    }
-})
-
 onMounted(() => {
     console.log("Component mounted, employee:", employee.data);
     console.log("Fetching resources...");
     checkins.fetch() // Fetch checkins data on mount
-    allowedLocationsResource.fetch()
-    shiftTypeResource.fetch()
+    currentShiftAssignmentResource.fetch()
     socket.emit("doctype_subscribe", DOCTYPE)
     socket.on("list_update", (data) => {
         if (data.doctype == DOCTYPE) {
@@ -327,8 +236,6 @@ const handleEmployeeCheckin = () => {
     if (settings.data?.allow_geolocation_tracking) {
         fetchLocation()
     }
-    shiftTypeResource.fetch()
-    console.log("Refetched Shift Type on modal open");
 }
 
 const submitLog = (logType) => {
@@ -339,8 +246,9 @@ const submitLog = (logType) => {
         time: checkinTimestamp.value,
         latitude: latitude.value,
         longitude: longitude.value,
-        custom_checkin_location: selectedLocation.value,
-        shift: shiftType.value,
+        custom_checkin_location: currentShiftAssignment.value?.shift_location,
+        shift: currentShiftAssignment.value?.shift_type,
+        device_id: "mobile_app",
     }
     console.log("Submitting check-in with payload:", payload);
 
@@ -357,6 +265,8 @@ const submitLog = (logType) => {
                     position: "bottom-center",
                     iconClasses: "text-green-500",
                 })
+                // Refresh shift assignment after successful check-in
+                currentShiftAssignmentResource.fetch()
             },
             onError(error) {
                 console.error("Check-in submission error:", error);

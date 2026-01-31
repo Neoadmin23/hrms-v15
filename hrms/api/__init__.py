@@ -318,6 +318,45 @@ def get_shifts(employee: str) -> list[dict[str, str]]:
 	).run(as_dict=True)
 
 
+@frappe.whitelist()
+def get_current_shift_assignment(employee: str) -> dict:
+	"""Get the current shift assignment for an employee on today's date"""
+	from hrms.hr.doctype.shift_assignment.shift_assignment import get_actual_start_end_datetime_of_shift
+	from frappe.utils import now_datetime
+
+	current_datetime = now_datetime()
+	shift_details = get_actual_start_end_datetime_of_shift(employee, current_datetime, True)
+
+	if not shift_details:
+		return {}
+
+	# Get shift assignment details including location
+	shift_assignment = frappe.db.get_value(
+		"Shift Assignment",
+		{
+			"employee": employee,
+			"shift_type": shift_details.shift_type.name,
+			"start_date": ["<=", current_datetime.date()],
+			"docstatus": 1,
+			"status": "Active",
+		},
+		["name", "shift_type", "shift_location", "start_date", "end_date"],
+		as_dict=True,
+		order_by="start_date desc"
+	)
+
+	if shift_assignment:
+		return {
+			"shift_type": shift_assignment.shift_type,
+			"shift_location": shift_assignment.shift_location,
+			"shift_assignment": shift_assignment.name,
+			"start_date": shift_assignment.start_date,
+			"end_date": shift_assignment.end_date,
+		}
+
+	return {}
+
+
 # Leaves and Holidays
 @frappe.whitelist()
 def get_leave_applications(
