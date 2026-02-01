@@ -38,8 +38,13 @@ class EmployeeCheckin(Document):
 		self.validate_distance_from_shift_location()
 
 		# Set device_id if not already set
+		import frappe
+		frappe.logger().info(f"device_id before check: '{self.device_id}' (type: {type(self.device_id)})")
 		if not self.device_id:
-			self.device_id = "backend"
+			self.device_id = "Backend"
+			frappe.logger().info("Set device_id to Backend because it was falsy")
+		else:
+			frappe.logger().info(f"device_id already set with value: '{self.device_id}', not changing it")
 
 	def validate_duplicate_log(self):
 		doc = frappe.db.exists(

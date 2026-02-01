@@ -248,7 +248,7 @@ const submitLog = (logType) => {
         longitude: longitude.value,
         custom_checkin_location: currentShiftAssignment.value?.shift_location,
         shift: currentShiftAssignment.value?.shift_type,
-        device_id: "mobile_app",
+        device_id: "Mobile",
     }
     console.log("Submitting check-in with payload:", payload);
 
