@@ -67,10 +67,14 @@ def get_columns():
 
 def get_data(filters):
     # Get all office locations
+    location_filters = {"latitude": ["is", "set"], "longitude": ["is", "set"]}
+    if filters.get("locations"):
+        location_filters["name"] = filters.get("locations")
+
     all_locations = frappe.get_all(
         "Shift Location",
         fields=["name", "location_name", "latitude", "longitude"],
-        filters={"latitude": ["is", "set"], "longitude": ["is", "set"]}
+        filters=location_filters
     )
     
     # Build location map
