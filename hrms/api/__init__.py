@@ -325,6 +325,7 @@ def get_current_shift_assignment(employee: str) -> dict:
 	from frappe.utils import now_datetime
 
 	current_datetime = now_datetime()
+	current_date = now_datetime()
 	shift_details = get_actual_start_end_datetime_of_shift(employee, current_datetime, True)
 
 	if not shift_details:
@@ -337,6 +338,7 @@ def get_current_shift_assignment(employee: str) -> dict:
 			"employee": employee,
 			"shift_type": shift_details.shift_type.name,
 			"start_date": ["<=", current_datetime.date()],
+   			"end_date": [">=", current_date],
 			"docstatus": 1,
 			"status": "Active",
 		},

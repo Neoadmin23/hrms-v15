@@ -49,28 +49,52 @@
                     {{ dayjs().format("D MMM, YYYY") }}
                 </div>
             </div>
-
-            <!-- Shift Details Display -->
-            <div v-if="currentShiftAssignment" class="w-full space-y-3">
-                <div>
-                    <label class="font-medium text-gray-700 text-sm">
-                        {{ __("Shift Type") }}
-                    </label>
-                    <div class="w-full mt-1 p-2 border rounded bg-gray-50 text-gray-700">
-                        {{ currentShiftAssignment.shift_type }}
-                    </div>
-                </div>
-                <div>
-                    <label class="font-medium text-gray-700 text-sm">
-                        {{ __("Shift Location") }}
-                    </label>
-                    <div class="w-full mt-1 p-2 border rounded bg-gray-50 text-gray-700">
-                        {{ currentShiftAssignment.shift_location }}
-                    </div>
-                </div>
+            
+            <!-- Shift Location Dropdown -->
+            <div class="w-full" v-if="allowedLocations.length">
+                <label for="custom_checkin_location" class="font-medium text-gray-700 text-sm">
+                    {{ __("Select Shift Location") }}
+                </label>
+                <select
+                    id="custom_checkin_location"
+                    v-model="selectedLocation"
+                    class="w-full mt-1 p-2 border rounded bg-white"
+                    required
+                >
+                    <option value="" disabled>{{ __("Choose a location") }}</option>
+                    <option
+                        v-for="location in allowedLocations"
+                        :key="location"
+                        :value="location"
+                    >
+                        {{ location }}
+                    </option>
+                </select>
             </div>
-            <div v-else class="w-full text-center text-sm text-red-500 font-medium">
-                {{ __("No active shift assignment found for today") }}
+
+            <!-- Shift Type Display (Read-Only) -->
+            <div class="w-full" v-if="resolvedShiftAssignment">
+                <label for="shift_type_display" class="font-medium text-gray-700 text-sm">
+                    {{ __("Shift Type") }}
+                </label>
+                <input
+                    id="shift_type_display"
+                    :value="resolvedShiftAssignment.shift_type"
+                    class="w-full mt-1 p-2 border rounded bg-gray-100 text-gray-700 cursor-not-allowed font-medium"
+                    readonly
+                />
+                <!-- Hint if falling back to default -->
+                <p v-if="resolvedShiftAssignment.shift_location !== selectedLocation" class="text-xs text-gray-500 mt-1">
+                    {{ __("Using default shift assignment.") }}
+                </p>
+            </div>
+
+            <!-- Warning if NO assignment matches and NO default exists -->
+            <div v-else-if="selectedLocation && shiftTypeResource.data" class="w-full p-3 mt-2 rounded bg-yellow-50 border border-yellow-200 flex items-start gap-2 text-yellow-800 text-sm">
+                <FeatherIcon name="alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" />
+                <div class="leading-tight font-medium">
+                    {{ __("No shift assignment available!") }}
+                </div>
             </div>
 
             <!-- Map View (Geolocation) -->
@@ -97,7 +121,7 @@
             <Button
                 variant="solid"
                 class="w-full py-5 text-sm"
-                :disabled="!currentShiftAssignment"
+                :disabled="!selectedLocation || !allowedLocations.length"
                 @click.once="submitLog(nextAction.action)"
             >
                 {{ __("Confirm {0}", [nextAction.label]) }}
@@ -112,8 +136,6 @@ import { computed, inject, ref, onMounted, onBeforeUnmount, watch } from "vue"
 import { IonModal, modalController } from "@ionic/vue"
 import { formatTimestamp } from "@/utils/formatters"
 
-console.log("CheckInPanel.vue loaded from HRMS app")
-
 const DOCTYPE = "Employee Checkin"
 
 const socket = inject("$socket")
@@ -124,7 +146,9 @@ const checkinTimestamp = ref(null)
 const latitude = ref(null)
 const longitude = ref(null)
 const locationStatus = ref("")
-const currentShiftAssignment = ref(null)
+const selectedLocation = ref("")
+const allowedLocations = ref([])
+const shiftType = ref("")
 
 const settings = createResource({
     url: "hrms.api.get_hr_settings",
@@ -138,24 +162,30 @@ const checkins = createListResource({
         employee: employee.data.name,
     },
     orderBy: "time desc",
-    auto: false, // Disable auto fetch to ensure it fetches with correct employee data
+    auto: false,
 })
-// Fetch current shift assignment for the employee
-const currentShiftAssignmentResource = createResource({
-    url: "hrms.api.get_current_shift_assignment",
+
+const allowedLocationsResource = createResource({
+    url: "frappe.client.get",
     params: {
-        employee: employee.data.name,
+        doctype: "Employee",
+        name: employee.data.name,
+        fields: ["custom_allowed_shift_locations"],
     },
     onSuccess(data) {
-        console.log("Fetching current shift assignment for employee:", employee.data.name);
-        console.log("Current shift assignment data:", data);
-        currentShiftAssignment.value = data
+        allowedLocations.value = (data.custom_allowed_shift_locations || []).map(row => row.shift_location).filter(Boolean)
+        
+        if (allowedLocations.value.length > 0 && !selectedLocation.value) {
+            selectedLocation.value = allowedLocations.value[0]
+        }
+        if (selectedLocation.value && !allowedLocations.value.includes(selectedLocation.value)) {
+            selectedLocation.value = allowedLocations.value[0] || ""
+        }
     },
     onError(error) {
-        console.error("Error fetching current shift assignment:", error);
         toast({
             title: __("Error"),
-            text: __("Failed to fetch current shift assignment"),
+            text: __("Failed to fetch allowed shift locations"),
             icon: "alert-circle",
             position: "bottom-center",
             iconClasses: "text-red-500",
@@ -163,19 +193,68 @@ const currentShiftAssignmentResource = createResource({
     },
 })
 
-// Watch for employee data changes to refetch checkins
-watch(() => employee.data?.name, (newEmployeeName) => {
-    if (newEmployeeName) {
-        console.log("Employee changed, refetching checkins for:", newEmployeeName);
-        checkins.fetch();
+const shiftTypeResource = createResource({
+    url: "centralhrms.employee_checkin.get_active_shift_assignments_for_employee", 
+    params: {
+        employee: employee.data.name,
+    },
+    onSuccess(data) {
+        console.log("Shift Assignments loaded:", data);
+        // Note: We removed the manual shift matching from here. 
+        // The availableShiftTypes computed property handles it now!
+    },
+    onError(error) {
+        console.error("Error fetching Shift Type:", error);
+        shiftType.value = ""; 
+        toast({
+            title: __("Error"),
+            text: __("Failed to fetch Shift Type"),
+            icon: "alert-circle",
+            position: "bottom-center",
+            iconClasses: "text-red-500",
+        })
+    },
+})
+// Determine the correct shift assignment based on location or fallback to default
+const resolvedShiftAssignment = computed(() => {
+    if (!shiftTypeResource.data) return null;
+
+    // 1. Try to find an assignment specifically for the selected dropdown location
+    if (selectedLocation.value) {
+        const exactMatch = shiftTypeResource.data.find(
+            assignment => assignment.shift_location === selectedLocation.value
+        );
+        if (exactMatch) return exactMatch;
+    }
+
+    // 2. FALLBACK: Look for the assignment marked as default
+    const defaultMatch = shiftTypeResource.data.find(
+        assignment => assignment.custom_is_default_shift === 1
+    );
+    
+    return defaultMatch || null;
+});
+
+// Watch the resolved assignment to update the shiftType value for the submission payload
+watch(resolvedShiftAssignment, (assignment) => {
+    if (assignment) {
+        shiftType.value = assignment.shift_type;
+    } else {
+        shiftType.value = "";
+    }
+}, { immediate: true });
+
+// Watch for selectedLocation changes to refetch shift type
+watch(selectedLocation, (newLocation) => {
+    if (newLocation) {
+        shiftTypeResource.fetch();
     }
 })
 
 onMounted(() => {
-    console.log("Component mounted, employee:", employee.data);
-    console.log("Fetching resources...");
-    checkins.fetch() // Fetch checkins data on mount
-    currentShiftAssignmentResource.fetch()
+    checkins.fetch() 
+    allowedLocationsResource.fetch()
+    shiftTypeResource.fetch()
     socket.emit("doctype_subscribe", DOCTYPE)
     socket.on("list_update", (data) => {
         if (data.doctype == DOCTYPE) {
@@ -211,19 +290,16 @@ function handleLocationSuccess(position) {
         __("Latitude: {0}°", [Number(latitude.value).toFixed(5)]),
         __("Longitude: {0}°", [Number(longitude.value).toFixed(5)]),
     ].join(", ")
-    console.log("Geolocation success:", locationStatus.value);
 }
 
 function handleLocationError(error) {
     locationStatus.value = "Unable to retrieve your location"
     if (error) locationStatus.value += `: ERROR(${error.code}): ${error.message}`
-    console.error("Geolocation error:", locationStatus.value);
 }
 
 const fetchLocation = () => {
     if (!navigator.geolocation) {
         locationStatus.value = __("Geolocation is not supported by your current browser")
-        console.error("Geolocation not supported");
     } else {
         locationStatus.value = __("Locating...")
         navigator.geolocation.getCurrentPosition(handleLocationSuccess, handleLocationError)
@@ -232,10 +308,10 @@ const fetchLocation = () => {
 
 const handleEmployeeCheckin = () => {
     checkinTimestamp.value = dayjs().format("YYYY-MM-DD HH:mm:ss")
-    console.log("Opening check-in modal, timestamp:", checkinTimestamp.value);
     if (settings.data?.allow_geolocation_tracking) {
         fetchLocation()
     }
+    shiftTypeResource.fetch()
 }
 
 const submitLog = (logType) => {
@@ -246,17 +322,14 @@ const submitLog = (logType) => {
         time: checkinTimestamp.value,
         latitude: latitude.value,
         longitude: longitude.value,
-        custom_checkin_location: currentShiftAssignment.value?.shift_location,
-        shift: currentShiftAssignment.value?.shift_type,
-        device_id: "mobile_app",
+        custom_checkin_location: selectedLocation.value,
+        shift: shiftType.value,
     }
-    console.log("Submitting check-in with payload:", payload);
 
     checkins.insert.submit(
         payload,
         {
             onSuccess() {
-                console.log("Check-in submitted successfully");
                 modalController.dismiss()
                 toast({
                     title: __("Success"),
@@ -265,11 +338,8 @@ const submitLog = (logType) => {
                     position: "bottom-center",
                     iconClasses: "text-green-500",
                 })
-                // Refresh shift assignment after successful check-in
-                currentShiftAssignmentResource.fetch()
             },
             onError(error) {
-                console.error("Check-in submission error:", error);
                 toast({
                     title: __("Error"),
                     text: `${actionLabel} failed! ${error.messages?.[0] || ""}`,
