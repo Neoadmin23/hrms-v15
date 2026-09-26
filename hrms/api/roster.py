@@ -198,19 +198,45 @@ def insert_shift(
 
 
 def get_holidays(month_start: str, month_end: str, employee_filters: dict[str, str]) -> dict[str, list[dict]]:
+	from centralhrms.utils.weekend_policy import get_weekend_dates
+
 	holidays = {}
 	holiday_lists = {}
 
 	for employee in frappe.get_list("Employee", filters=employee_filters, pluck="name"):
-		if not (holiday_list := get_holiday_list_for_employee(employee, raise_exception=False)):
-			continue
-		if holiday_list not in holiday_lists:
-			holiday_lists[holiday_list] = frappe.get_all(
-				"Holiday",
-				filters={"parent": holiday_list, "holiday_date": ["between", [month_start, month_end]]},
-				fields=["name as holiday", "holiday_date", "description", "weekly_off"],
-			)
-		holidays[employee] = holiday_lists[holiday_list].copy()
+		emp_events = []
+
+		# 1. Public holidays from Holiday List
+		holiday_list = get_holiday_list_for_employee(employee, raise_exception=False)
+		if holiday_list:
+			if holiday_list not in holiday_lists:
+				holiday_lists[holiday_list] = frappe.get_all(
+					"Holiday",
+					filters={"parent": holiday_list, "holiday_date": ["between", [month_start, month_end]]},
+					fields=["name as holiday", "holiday_date", "description", "weekly_off"],
+				)
+			emp_events = holiday_lists[holiday_list].copy()
+
+		# 2. Weekend Policy dates for this employee
+		weekend_dates = get_weekend_dates(employee, month_start, month_end)
+		weekend_set = set(weekend_dates)
+
+		# 3. If weekend policy found, remove all weekly_offs from Holiday List
+		if weekend_set:
+			emp_events = [h for h in emp_events if not h.get("weekly_off")]
+
+		# 4. Add Weekend Policy dates that are not already in holidays
+		existing_dates = {h["holiday_date"] for h in emp_events}
+		for date_str in weekend_dates:
+			if date_str not in existing_dates:
+				emp_events.append({
+					"holiday": "Weekend Policy",
+					"holiday_date": date_str,
+					"description": "Weekend Policy",
+					"weekly_off": 1,
+				})
+
+		holidays[employee] = emp_events
 
 	return holidays
 

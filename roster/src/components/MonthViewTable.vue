@@ -198,12 +198,10 @@
 										<FeatherIcon
 											name="clock"
 											class="stroke-gray-400"
-											style="
-												 {
-													height: 0.82rem;
-													width: 0.82rem;
-												}
-											"
+											:style="{
+												height: '0.82rem',
+												width: '0.82rem',
+											}"
 										/>
 										<span>
 											{{ shift["start_time"] }} - {{ shift["end_time"] }}
@@ -216,12 +214,10 @@
 										<FeatherIcon
 											name="map-pin"
 											class="stroke-gray-400"
-											style="
-												 {
-													height: 0.82rem;
-													width: 0.82rem;
-												}
-											"
+											:style="{
+												height: '0.82rem',
+												width: '0.82rem',
+											}"
 										/>
 										<span>{{ shift["shift_location"] }}</span>
 									</div>
