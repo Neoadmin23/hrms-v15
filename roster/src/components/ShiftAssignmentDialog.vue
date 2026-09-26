@@ -22,12 +22,18 @@
 					v-model="form.department"
 					:disabled="true"
 				/>
-				<Link
-					doctype="Shift Type"
-					label="Shift Type"
-					v-model="form.shift_type"
-					:disabled="!!props.shiftAssignmentName"
-				/>
+			<Link
+				doctype="Shift Type"
+				label="Shift Type"
+				v-model="form.shift_type"
+				:disabled="!!props.shiftAssignmentName"
+			/>
+			<Link
+				doctype="Weekend Policy"
+				label="Weekend Policy"
+				v-model="form.custom_weekend_policy"
+				:disabled="!!props.shiftAssignmentName"
+			/>
 				<FormControl
 					type="date"
 					label="Start Date"
@@ -161,7 +167,8 @@ type Form = {
 		| "department"
 		| "employee"
 		| "shift_type"
-		| "shift_location"]: string | { value: string; label?: string };
+		| "shift_location"
+		| "custom_weekend_policy"]: string | { value: string; label?: string };
 } & {
 	start_date: string;
 	end_date: string;
@@ -201,6 +208,7 @@ const formObject: Form = {
 	end_date: "",
 	status: "Active",
 	shift_schedule_assignment: "",
+	custom_weekend_policy: "",
 };
 
 const repeatOnDaysObject = {
@@ -459,6 +467,7 @@ const insertShift = createResource({
 			status: form.status,
 			start_date: form.start_date,
 			end_date: form.end_date,
+			custom_weekend_policy: form.custom_weekend_policy,
 		};
 	},
 	onSuccess: () => {
@@ -498,6 +507,7 @@ const createShiftAssignmentSchedule = createResource({
 			start_date: form.start_date,
 			end_date: form.end_date,
 			shift_location: form.shift_location,
+			custom_weekend_policy: form.custom_weekend_policy,
 			repeat_on_days: Object.keys(repeatOnDays).filter(
 				(day) => repeatOnDays[day as keyof typeof repeatOnDays],
 			),

@@ -4,20 +4,21 @@
  "creation": "2024-11-11 17:33:00.330488",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "shift_details_section",
-  "employee",
-  "employee_name",
-  "column_break_toss",
-  "company",
-  "schedule_settings_section",
-  "shift_schedule",
-  "shift_location",
-  "shift_status",
-  "column_break_iprq",
-  "enabled",
-  "create_shifts_after"
- ],
+  "field_order": [
+   "shift_details_section",
+   "employee",
+   "employee_name",
+   "column_break_toss",
+   "company",
+   "schedule_settings_section",
+   "shift_schedule",
+   "shift_location",
+   "shift_status",
+   "custom_weekend_policy",
+   "column_break_iprq",
+   "enabled",
+   "create_shifts_after"
+  ],
  "fields": [
   {
    "fieldname": "schedule_settings_section",
@@ -98,6 +99,12 @@
    "fieldtype": "Link",
    "label": "Shift Location",
    "options": "Shift Location"
+  },
+  {
+   "fieldname": "custom_weekend_policy",
+   "fieldtype": "Link",
+   "label": "Weekend Policy",
+   "options": "Weekend Policy"
   }
  ],
  "index_web_pages_for_search": 1,

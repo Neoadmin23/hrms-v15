@@ -114,6 +114,7 @@ class ShiftScheduleAssignment(Document):
 			self.shift_status,
 			self.shift_location,
 			self.name,
+			self.custom_weekend_policy,
 		)
 		self.db_set("create_shifts_after", end_date, update_modified=False)
 

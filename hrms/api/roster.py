@@ -58,6 +58,7 @@ def create_shift_schedule_assignment(
 	repeat_on_days: list[str],
 	frequency: str,
 	shift_location: str | None = None,
+	custom_weekend_policy: str | None = None,
 ) -> None:
 	shift_schedule = get_or_insert_shift_schedule(shift_type, frequency, repeat_on_days)
 	shift_schedule_assignment = frappe.get_doc(
@@ -68,6 +69,7 @@ def create_shift_schedule_assignment(
 			"company": company,
 			"shift_status": status,
 			"shift_location": shift_location,
+			"custom_weekend_policy": custom_weekend_policy,
 			"enabled": 0 if end_date else 1,
 		}
 	).insert()
@@ -169,6 +171,7 @@ def insert_shift(
 	end_date: str | None,
 	status: str,
 	shift_location: str | None = None,
+	custom_weekend_policy: str | None = None,
 ) -> None:
 	filters = {
 		"doctype": "Shift Assignment",
@@ -194,7 +197,7 @@ def insert_shift(
 		frappe.db.set_value("Shift Assignment", next_shift, "start_date", start_date)
 
 	else:
-		create_shift_assignment(employee, company, shift_type, start_date, end_date, status, shift_location)
+		create_shift_assignment(employee, company, shift_type, start_date, end_date, status, shift_location, custom_weekend_policy=custom_weekend_policy)
 
 
 def get_holidays(month_start: str, month_end: str, employee_filters: dict[str, str]) -> dict[str, list[dict]]:

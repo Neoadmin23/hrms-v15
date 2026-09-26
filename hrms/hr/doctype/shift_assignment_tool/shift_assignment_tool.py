@@ -329,6 +329,7 @@ def create_shift_assignment(
 	status: str,
 	shift_location: str | None = None,
 	shift_schedule_assignment: str | None = None,
+	custom_weekend_policy: str | None = None,
 ) -> str:
 	assignment = frappe.new_doc("Shift Assignment")
 	assignment.employee = employee
@@ -339,6 +340,7 @@ def create_shift_assignment(
 	assignment.status = status
 	assignment.shift_location = shift_location
 	assignment.shift_schedule_assignment = shift_schedule_assignment
+	assignment.custom_weekend_policy = custom_weekend_policy
 	assignment.save()
 	assignment.submit()
 	return assignment
