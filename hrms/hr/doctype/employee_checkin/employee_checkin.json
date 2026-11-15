@@ -8,6 +8,7 @@
  "field_order": [
   "employee",
   "employee_name",
+  "company",
   "log_type",
   "shift",
   "column_break_4",
@@ -46,6 +47,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "employee.company",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
    "read_only": 1
   },
   {
