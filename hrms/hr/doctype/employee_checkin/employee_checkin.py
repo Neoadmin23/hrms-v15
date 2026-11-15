@@ -25,6 +25,10 @@ class EmployeeCheckin(Document):
 
 	def validate(self):
 		validate_active_employee(self.employee)
+		# Set company from the linked Employee so checkins can be
+		# filtered / reported by company (e.g. Number Cards).
+		if self.employee and not self.company:
+			self.company = frappe.db.get_value("Employee", self.employee, "company")
 		self.validate_duplicate_log()
 		self.validate_time_change()
 
