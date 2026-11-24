@@ -268,7 +268,10 @@ onBeforeUnmount(() => {
     socket.off("list_update")
 })
 
+const latestLogOverride = ref(null)
+
 const lastLog = computed(() => {
+    if (latestLogOverride.value) return latestLogOverride.value
     if (checkins.list.loading || !checkins.data) return {}
     return checkins.data[0]
 })
@@ -331,6 +334,8 @@ const submitLog = (logType) => {
         {
             onSuccess() {
                 modalController.dismiss()
+                latestLogOverride.value = { log_type: logType, time: checkinTimestamp.value }
+                checkins.fetch()
                 toast({
                     title: __("Success"),
                     text: __("{0} successful!", [actionLabel]),
